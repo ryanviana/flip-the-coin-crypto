@@ -1,0 +1,35 @@
+{
+  "language": "Solidity",
+  "sources": {
+    "contracts/FlipTheCoin.sol": {
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity >=0.8.0 <0.9.0;\n\ninterface IETHOracle {\n\tfunction sendRequest(\n\t\tbytes memory encryptedSecretsUrls,\n\t\tuint8 donHostedSecretsSlotID,\n\t\tuint64 donHostedSecretsVersion,\n\t\tstring[] memory args,\n\t\tbytes[] memory bytesArgs,\n\t\tuint64 subscriptionId,\n\t\tuint32 gasLimit,\n\t\tbytes32 donID\n\t) external returns (bytes32 requestId);\n\n\tfunction didPriceIncrease(\n\t\tuint256 fromTimestamp,\n\t\tuint256 toTimestamp\n\t) external view returns (bool priceIncreased);\n}\n\ncontract FlipTheCoin {\n\tIETHOracle public oracle;\n\n\tuint256 public constant FLIP_FEE_PERCENTAGE = 3;\n\tuint256 public constant MAX_BET_PERCENTAGE = 90;\n\tuint256 public constant WIN_MULTIPLIER = 150;\n\tuint256 public constant LOSS_MULTIPLIER = 50;\n\tuint256 public reserve = 0;\n\n\tstruct Bet {\n\t\tuint256 amount;\n\t\tbool prediction;\n\t\tuint256 betTimestamp;\n\t\tbool resolved;\n\t\tbool win;\n\t}\n\n\tmapping(address => Bet[]) public betsByAddress;\n\n\tevent BetPlaced(\n\t\taddress indexed bettor,\n\t\tuint256 indexed betIndex,\n\t\tuint256 amount,\n\t\tbool prediction,\n\t\tuint256 betTimestamp\n\t);\n\n\tevent BetResolved(\n\t\taddress indexed bettor,\n\t\tuint256 indexed betIndex,\n\t\tbool win,\n\t\tuint256 payout\n\t);\n\n\tconstructor(address oracleAddress) payable {\n\t\toracle = IETHOracle(oracleAddress);\n\t\treserve += msg.value;\n\t}\n\n\tfunction getMaxBetAmount() public view returns (uint256) {\n\t\treturn (reserve * MAX_BET_PERCENTAGE) / 100;\n\t}\n\n\tfunction getNumberOfBets(address bettor) public view returns (uint) {\n\t\treturn betsByAddress[bettor].length;\n\t}\n\n\tfunction placeBet(\n\t\tbool _prediction,\n\t\tuint256 _amount,\n\t\tuint256 _betTimestamp\n\t) public payable {\n\t\trequire(msg.value == _amount, \"Incorrect value sent\");\n\t\trequire(\n\t\t\t_amount <= (reserve * MAX_BET_PERCENTAGE) / 100,\n\t\t\t\"Bet amount exceeds maximum allowed\"\n\t\t);\n\n\t\tuint256 fee = (_amount * FLIP_FEE_PERCENTAGE) / 100;\n\t\tuint256 betAmount = _amount - fee;\n\t\treserve += fee;\n\n\t\tbetsByAddress[msg.sender].push(\n\t\t\tBet(betAmount, _prediction, _betTimestamp, false, false)\n\t\t);\n\n\t\temit BetPlaced(\n\t\t\tmsg.sender,\n\t\t\tbetsByAddress[msg.sender].length - 1,\n\t\t\tbetAmount,\n\t\t\t_prediction,\n\t\t\t_betTimestamp\n\t\t);\n\t}\n\n\tfunction resolveBet(\n\t\tuint256 _betIndex,\n\t\tuint256 _resolutionTimestamp\n\t) public {\n\t\trequire(\n\t\t\t_betIndex < betsByAddress[msg.sender].length,\n\t\t\t\"Bet index out of range\"\n\t\t);\n\n\t\tBet storage bet = betsByAddress[msg.sender][_betIndex];\n\t\trequire(!bet.resolved, \"Bet already resolved\");\n\n\t\tbool priceIncreased = oracle.didPriceIncrease(\n\t\t\tbet.betTimestamp,\n\t\t\t_resolutionTimestamp\n\t\t);\n\n\t\tbool win = (priceIncreased == bet.prediction);\n\t\tuint256 payout = win\n\t\t\t? (bet.amount * WIN_MULTIPLIER) / 100\n\t\t\t: (bet.amount * LOSS_MULTIPLIER) / 100;\n\n\t\trequire(reserve >= payout, \"Insufficient reserve\");\n\n\t\tpayable(msg.sender).transfer(payout);\n\t\treserve -= payout;\n\n\t\tbet.resolved = true;\n\t\tbet.win = win;\n\n\t\temit BetResolved(msg.sender, _betIndex, win, payout);\n\t}\n\n\tfunction testOracle(\n\t\tuint256 fromTimestamp,\n\t\tuint256 toTimestamp\n\t) public view returns (bool) {\n\t\treturn oracle.didPriceIncrease(fromTimestamp, toTimestamp);\n\t}\n\n\tfunction testOracle(\n\t\tbytes memory encryptedSecretsUrls,\n\t\tuint8 donHostedSecretsSlotID,\n\t\tuint64 donHostedSecretsVersion,\n\t\tstring[] memory args,\n\t\tbytes[] memory bytesArgs,\n\t\tuint64 subscriptionId,\n\t\tuint32 gasLimit,\n\t\tbytes32 donID\n\t) public {\n\t\t// Send request to the oracle\n\t\toracle.sendRequest(\n\t\t\tencryptedSecretsUrls,\n\t\t\tdonHostedSecretsSlotID,\n\t\t\tdonHostedSecretsVersion,\n\t\t\targs,\n\t\t\tbytesArgs,\n\t\t\tsubscriptionId,\n\t\t\tgasLimit,\n\t\t\tdonID\n\t\t);\n\t}\n}\n"
+    }
+  },
+  "settings": {
+    "optimizer": {
+      "enabled": true,
+      "runs": 200
+    },
+    "outputSelection": {
+      "*": {
+        "*": [
+          "abi",
+          "evm.bytecode",
+          "evm.deployedBytecode",
+          "evm.methodIdentifiers",
+          "metadata",
+          "devdoc",
+          "userdoc",
+          "storageLayout",
+          "evm.gasEstimates"
+        ],
+        "": [
+          "ast"
+        ]
+      }
+    },
+    "metadata": {
+      "useLiteralContent": true
+    }
+  }
+}
